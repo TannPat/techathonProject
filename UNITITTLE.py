@@ -22,6 +22,9 @@ diabetes_model = pickle.load(open(os.path.join(base_dir, "diabetes_model.sav"), 
 heart_disease_model = pickle.load(open(os.path.join(base_dir, "heart_disease_model.sav"), 'rb'))
 parkinsons_model = pickle.load(open(os.path.join(base_dir, "parkinsons_model.sav"), 'rb'))
 parkinsons_model = pickle.load(open(os.path.join(base_dir, "parkinsons_model.sav"), 'rb'))
+css_path = os.path.join(base_dir, "styles.css")
+
+st.markdown("<style> " + open(css_path).read() + " </style>", unsafe_allow_html=True)
 
 # Function to fetch recent healthcare articles in Hindi from RSS feeds
 
