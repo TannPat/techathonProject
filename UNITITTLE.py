@@ -1,179 +1,237 @@
-# @@ -1,324 +1,325 @@
-# # -*- coding: utf-8 -*-
-# """
-# Created on Wed Feb 19 13:15:21 2025
-
-# @author: admin
-# """
-
 import os
 import pickle
 import streamlit as st
+import requests
+import feedparser
 from streamlit_option_menu import option_menu
 import google.generativeai as genai
-import re
-import requests
-from vertexai.generative_models import GenerativeModel, GenerationConfig, Part, Content
-import json
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
-
-# relative paths for each 
-
-diabetes_path = os.path.join(base_dir, "diabetes_model.sav")
-heart_disease_path = os.path.join(base_dir, "heart_disease_model.sav")
-parkinsons_path = os.path.join(base_dir, "parkinsons_model.sav")
-css_path = os.path.join(base_dir, "styles.css")
 
 # Set page configuration
 st.set_page_config(page_title="Health Assistant",
-                   layout="wide",
-                   page_icon="🧑‍⚕️")
+                   layout="wide", page_icon="🧑‍⚕️")
 
-# loading the saved models
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
-diabetes_model = pickle.load(
-    open(f'{diabetes_path}', 'rb'))
-heart_disease_model = pickle.load(
-    open(f'{heart_disease_path}', 'rb'))
-parkinsons_model = pickle.load(
+# Load disease prediction models
+diabetes_model = pickle.load(open(os.path.join(base_dir, "diabetes_model.sav"), 'rb'))
+heart_disease_model = pickle.load(open(os.path.join(base_dir, "heart_disease_model.sav"), 'rb'))
+parkinsons_model = pickle.load(open(os.path.join(base_dir, "parkinsons_model.sav"), 'rb'))
+parkinsons_model = pickle.load(open(os.path.join(base_dir, "parkinsons_model.sav"), 'rb'))
 
-# Function to interact with the Gemini Pro API
+# Function to fetch recent healthcare articles in Hindi from RSS feeds
 
-    open(f'{parkinsons_path}', 'rb'))
 
-def is_health_related(user_input):
+def get_health_articles():
+    feeds = [
+        "https://www.healthshots.com/hindi/rss-feeds/health-news/",
+        "https://www.prabhasakshi.com/rss/health"
+    ]
+    articles = []
+    for url in feeds:
+        try:
+            feed = feedparser.parse(url)
+            # Fetch top 5 articles from each feed
+            for entry in feed.entries[:5]:
+                title = entry.title
+                link = entry.link
+                articles.append((title, link))
+        except Exception as e:
+            st.error(f"Error fetching articles from {url}: {e}")
+    return articles if articles else [("No articles found", "#")]
 
-    # A simple regex pattern to check for health-related keywords
+# Function to extract text from an article
 
-    health_keywords = [
-        "health", "doctor", "medicine", "symptom", "disease", "treatment",
-        "diagnosis", "medication", "wellness", "nutrition", "exercise",
-        "mental health", "therapy", "healthcare", "patient", "illness"
+
+def get_article_text(url):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        paragraphs = soup.find_all("p")
+        article_text = " ".join([para.get_text() for para in paragraphs])
+        return article_text if article_text else "No meaningful text found."
+    except Exception as e:
+        return f"Error fetching article content: {e}"
+
+# Sidebar menu
+with st.sidebar:
+    selected = option_menu(
+        "Multiple Disease Prediction System",
+        ["General Assistance",
+         "Ayurveda and Remedies",
+         "Insightful Answers",
+         "Diabetes Prediction",
+         "Heart Disease Prediction",
+         "Parkinson's Prediction",
+         "Health News in Hindi"],
+        menu_icon='hospital-fill',
+        icons=['chat-right-heart', 'feather2', 'lightbulb',
+               'activity', 'heart', 'person', 'newspaper'],
+        default_index=0
+    )
+
+# Health News Section
+if selected == "Health News in Hindi":
+    st.title("📰 Latest Healthcare News in Hindi")
+    articles = get_health_articles()
+
+    for title, link in articles:
+        if link != "#":
+            st.markdown(f"### [{title}]({link})")
+
+# General Assistance Chatbot
+if selected == "General Assistance":
+    st.title("💬 Healthcare Chatbot")
+    st.write("Ask me anything about health!")
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    genai.configure(api_key=os.getenv("API_KEY"))
+# Suggested questions
+    suggested_questions = [
+        "What are the symptoms of diabetes?",
+        "How can I prevent heart disease?",
+        "What are the early signs of Parkinson's?",
+        "How do I manage high blood pressure?",
+        "What are the risk factors for breast cancer?",
     ]
 
-    pattern = r'\b(?:' + '|'.join(health_keywords) + r')\b'
-    return bool(re.search(pattern, user_input, re.IGNORECASE))
 
+# Display suggested questions as clickable buttons
+    st.write("### Suggested Questions:")
+    selected_question = st.radio("", suggested_questions, index=None)
 
-def get_gemini_response(user_input):
-    if not is_health_related(user_input):
-        return 0
-    else:
-        return 1
+# Input field with autofill when a suggestion is selected
+    if "user_question" not in st.session_state:
+        st.session_state.user_question = ""
 
+    if selected_question:
+        st.session_state.user_question = selected_question
 
-# Adding stylesheet
-st.markdown('<link href=f"{css_path}" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">', unsafe_allow_html=True)
+    user_input = st.text_input(
+        "Your Question:", st.session_state.user_question, key="general_assistance_input")
 
-# sidebar for navigation
-with st.sidebar:
-    selected = option_menu('Multiple Disease Prediction System',
-                           ['General Assistance',
-                            'Diabetes Prediction',
-                            'Heart Disease Prediction',
-                            'Parkinsons Prediction',
-                            'Hypertention Prediction',
-                            'Breast Cancer',
-                            'Maternal & Child Health',
-                            'Neonatal Jaundice Detection ',
-                            'Malnutrition Detection in Children',
-                            'Anemia Detection',
-                            'Dengue & Malaria Prediction',
-                            'Typhoid & Cholera Detection',
-                            'Tuberculosis (TB) Screening ',
-                            'Leptospirosis Prediction',
-                            'Farmer’s Lung Disease Prediction ',
-                            'Pesticide Poisoning Risk Analysis ',
-
-                            ],
-                           menu_icon='hospital-fill',
-                           icons=['chat-right-heart', 'activity',
-                                  'heart', 'person', 'clipboard-pulse'],
-                           default_index=0)
-
-# General Assistance Page (Chatbot)
-if selected == 'General Assistance':
-
-    # Page Title
-    st.title('General Healthcare Chatbot')
-
-    # os.getenv(str(['API_KEY']))
-    key = genai.configure(api_key=os.getenv('API_KEY'))
-    model = genai.GenerativeModel('gemini-pro')
-
-    question = st.text_input('Ask a question')
-    ask = st.button('Ask')
+    ask = st.button("Ask", key="general_ask")
 
     if ask:
-        if get_gemini_response(question):
-            response = model.generate_content(question)
-            st.success(getattr(response, 'text'))
-        else:
-            st.error("Please ask a health related question.")
+        st.write(
+            f"🧑‍⚕️ **Chatbot:** Here is the response to your question: _'{user_input}'_")
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content("Answer in 200 words: " + str(user_input))
+        st.success(response.text)
 
-    # Define model with system role
+# Ayurveda Chatbot
+if selected == "Ayurveda and Remedies":
+    st.title("Traditional Cures")
+    st.write("Gives Home Remedies for Symptoms!")
+    genai.configure(api_key=os.getenv("API_KEY"))
 
-# Diabetes Prediction Page
-if selected == 'Diabetes Prediction':
-    # page title
-    st.title('Diabetes Prediction using ML')
+# Suggested questions
+    suggested_questions = [
+        "Cough",
+        "Sore Throat",
+        "Indigestion",
+        "Rashes",
+        "Insomnia",
+        "Acidity"
+    ]
 
-    # getting the input data from the user
-    col1, col2, col3 = st.columns(3)
+
+# Display suggested questions as clickable buttons
+    st.write("### Suggested Questions:")
+    selected_question = st.radio("", suggested_questions, index=None)
+
+# Input field with autofill when a suggestion is selected
+    if "user_question" not in st.session_state:
+        st.session_state.user_question = ""
+
+    if selected_question:
+        st.session_state.user_question = selected_question
+
+    user_input = st.text_input(
+        "Your symptom(s):", st.session_state.user_question, key="ayurveda_remedies_input")
+
+    ask = st.button("Ask", key="ayurveda_ask")
+
+    if ask:
+        st.write(
+            f"🧑‍⚕️ **Chatbot:** Here is some home remedies for your relief from {user_input}")
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(
+            "With no further explanation, list ayurvedic or traditional Indian home remedies for " + str(user_input))
+        st.success(response.text)
+
+# Insightful Chatbot
+if selected == "Insightful Answers":
+    st.title("Ask Me More Abstract Questions for Health")
+    st.write("When Wisdom is More Required than Intelligence")
+    genai.configure(api_key=os.getenv("API_KEY"))
+# Suggested questions
+    suggested_questions = [
+        'Which diet plans are the most beneficial for overall health?',
+        'Yoga vs. Gym – which is better for long-term health?',
+        'Which Ayurvedic and allopathic treatments can work effectively together?',
+        'What is the latest healthcare technology that is most effective?',
+        'What daily habits should be included for a healthier lifestyle?'
+    ]
+
+
+# Display suggested questions as clickable buttons
+    st.write("### Suggested Questions:")
+    selected_question = st.radio("", suggested_questions, index=None)
+
+# Input field with autofill when a suggestion is selected
+    if "user_question" not in st.session_state:
+        st.session_state.user_question = ""
+
+    if selected_question:
+        st.session_state.user_question = selected_question
+
+    user_input = st.text_input(
+        "Your Question:", st.session_state.user_question, key="insightful_questions_input")
+
+    ask = st.button("Ask", key="insightful_ask")
+
+    if ask:
+        st.write(
+            f"🧑‍⚕️ **Chatbot:** To answer your question: _'{user_input}'_")
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(
+            "Provide a wise, analytical, insightful answer for the question of less than 4 paragraphs: " + str(user_input))
+        st.success(response.text)
+
+# Diabetes Prediction
+if selected == "Diabetes Prediction":
+    st.title("🩸 Diabetes Prediction")
+    col1, col2 = st.columns(2)
 
     with col1:
-        Pregnancies = st.text_input('Number of Pregnancies')
+        Pregnancies = st.slider("Number of Pregnancies", 0, 15, 1)
+        Glucose = st.slider("Glucose Level", 50, 200, 100)
+        BloodPressure = st.slider("Blood Pressure", 50, 150, 80)
 
     with col2:
-        Glucose = st.text_input('Glucose Level')
+        SkinThickness = st.slider("Skin Thickness", 5, 50, 20)
+        Insulin = st.slider("Insulin Level", 0, 300, 100)
+        BMI = st.slider("BMI", 10.0, 50.0, 25.0)
 
-    with col3:
-        BloodPressure = st.text_input('Blood Pressure value')
+    DiabetesPedigreeFunction = st.number_input(
+        "Diabetes Pedigree Function", value=0.5, format="%.2f")
+    Age = st.number_input("Age", min_value=1, max_value=120, value=30)
 
-    with col1:
-        SkinThickness = st.text_input('Skin Thickness value')
+    if st.button("Predict Diabetes"):
+        user_input = [Pregnancies, Glucose, BloodPressure,
+                      SkinThickness, Insulin, BMI, DiabetesPedigreeFunction, Age]
+        result = diabetes_model.predict([user_input])
+        st.success("Diabetic" if result[0] == 1 else "Not Diabetic")
 
-    with col2:
-        Insulin = st.text_input('Insulin Level')
-
-    with col3:
-        BMI = st.text_input('BMI value')
-
-    with col1:
-        DiabetesPedigreeFunction = st.text_input(
-            'Diabetes Pedigree Function value')
-
-    with col2:
-        Age = st.text_input('Age of the Person')
-
-    # code for Prediction
-    diab_diagnosis = ''
-
-    # creating a button for Prediction
-    if st.button('Diabetes Test Result'):
-        user_input = [Pregnancies, Glucose, BloodPressure, SkinThickness, Insulin,
-                      BMI, DiabetesPedigreeFunction, Age]
-
-        user_input = [float(x) for x in user_input]
-
-        diab_prediction = diabetes_model.predict([user_input])
-
-        if diab_prediction[0] == 1:
-            diab_diagnosis = 'The person is diabetic'
-        else:
-            diab_diagnosis = 'The person is not diabetic'
-
-    st.success(diab_diagnosis)
-
-# Heart Disease Prediction Page
-if selected == 'Heart Disease Prediction':
-    # page title
-    st.title('Heart Disease Prediction using ML')
-
+# Heart Disease Prediction
+if selected == "Heart Disease Prediction":
+    st.title("❤️ Heart Disease Prediction")
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -213,33 +271,17 @@ if selected == 'Heart Disease Prediction':
         ca = st.text_input('Major vessels colored by flourosopy')
 
     with col1:
-        thal = st.text_input(
-            'thal: 0 = normal; 1 = fixed defect; 2 = reversable defect')
+        thal = st.text_input('thal: 0 = normal; 1 = fixed defect; 2 = reversable defect')
 
-    # code for Prediction
-    heart_diagnosis = ''
+    if st.button("Predict Heart Disease"):
+        user_input = [age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal]
+        result = heart_disease_model.predict([user_input])
+        st.success(
+            "Heart Disease Detected" if result[0] == 1 else "No Heart Disease")
 
-    # creating a button for Prediction
-    if st.button('Heart Disease Test Result'):
-        user_input = [age, sex, cp, trestbps, chol, fbs,
-                      restecg, thalach, exang, oldpeak, slope, ca, thal]
-
-        user_input = [float(x) for x in user_input]
-
-        heart_prediction = heart_disease_model.predict([user_input])
-
-        if heart_prediction[0] == 1:
-            heart_diagnosis = 'The person is having heart disease'
-        else:
-            heart_diagnosis = 'The person does not have any heart disease'
-
-    st.success(heart_diagnosis)
-
-# Parkinson's Prediction Page
-if selected == "Parkinsons Prediction":
-    # page title
-    st.title("Parkinson's Disease Prediction using ML")
-
+# Parkinson's Prediction
+if selected == "Parkinson's Prediction":
+    st.title("🧠 Parkinson's Disease Prediction")
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
@@ -308,18 +350,9 @@ if selected == "Parkinsons Prediction":
     with col2:
         PPE = st.text_input('PPE')
 
-    # code for Prediction
-    parkinsons_diagnosis = ''
-
-    # creating a button for Prediction
-    if st.button("Parkinson's Test Result"):
-        user_input = [float(x) for x in user_input]
-
-        parkinsons_prediction = parkinsons_model.predict([user_input])
-
-        if parkinsons_prediction[0] == 1:
-            parkinsons_diagnosis = "The person has Parkinson's disease"
-        else:
-            parkinsons_diagnosis = "The person does not have Parkinson's disease"
-
-    st.success(parkinsons_diagnosis)
+    if st.button("Predict Parkinson's"):
+        user_input = [fo, fhi, flo, Jitter_percent, Jitter_Abs,
+                      RAP, PPQ, DDP,Shimmer, Shimmer_dB, APQ3, APQ5,
+                      APQ, DDA, NHR, HNR, RPDE, DFA, spread1, spread2, D2, PPE]
+        result = parkinsons_model.predict([user_input])
+        st.success("Has Parkinson's" if result[0] == 1 else "No Parkinson's")
